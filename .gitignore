@@ -8,16 +8,13 @@ node_modules/
 .env.local
 .env.*.local
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
 # OS
 .DS_Store
 Thumbs.db
+
+# Cache
+__pycache__/
+*.pyc
 
 # Build output
 dist/
