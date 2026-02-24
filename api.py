@@ -1,8 +1,11 @@
 """FastAPI endpoints"""
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import logging
+import os
+from dotenv import load_dotenv
 
 from backend.droplet_manager import DropletManager
 from backend.database_manager import DBManager
@@ -14,8 +17,34 @@ from backend.constants import (
 databaseManager = DBManager()
 dropletManager = DropletManager(databaseManager)
 
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Game Orchestrator API")
+
+
+def _get_cors_allowed_origins() -> list[str]:
+    raw_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    if raw_origins.strip():
+        return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+    return [
+        "https://test.femquest.gamelabgraz",
+        "https://test.femquest.gamelabgraz.at",
+        "https://femquest.gamelabgraz.at",
+    ]
+
+
+cors_allowed_origins = _get_cors_allowed_origins()
+_CORS_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_allowed_origins,
+    allow_origin_regex=_CORS_REGEX,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class ServerHeartbeatRequest(BaseModel):

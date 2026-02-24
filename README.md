@@ -43,6 +43,7 @@ DROPLET_TAG=your_droplet_tag
 SNAPSHOT_ID=your_snapshot_id
 DROPLET_REGION=your_region
 DROPLET_SIZE=your_size
+CORS_ALLOWED_ORIGINS=https://test.femquest.gamelabgraz,https://test.femquest.gamelabgraz.at,https://femquest.gamelabgraz.at
 ```
 
 #### 2. Run the app:
@@ -92,6 +93,7 @@ DROPLET_TAG=your_droplet_tag
 SNAPSHOT_ID=your_snapshot_id
 DROPLET_REGION=your_region
 DROPLET_SIZE=your_size
+CORS_ALLOWED_ORIGINS=http://test.femquest.gamelabgraz,http://femquest.gamelabgraz.at
 EOF
 
 # Build and run
