@@ -1,6 +1,6 @@
 """FastAPI endpoints"""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import logging
@@ -9,9 +9,10 @@ from dotenv import load_dotenv
 
 from backend.droplet_manager import DropletManager
 from backend.database_manager import DBManager
+from backend.security import require_internal_hmac
 from backend.constants import (
     KEY_ERROR, KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS, KEY_CONNECTED_CLIENTS,
-    ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED, KEY_LAST_HEARTBEAT
+    ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
 )
 
 databaseManager = DBManager()
@@ -47,6 +48,21 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def startup_event():
+    logger.info("[API DEBUG] Game Orchestrator API starting up...")
+    logger.info(f"[API DEBUG] CORS allowed origins: {cors_allowed_origins}")
+    logger.info(f"[API DEBUG] HMAC key configured: {bool(os.getenv('INTERNAL_HMAC_KEY'))}")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"[REQUEST DEBUG] Incoming: {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}")
+    response = await call_next(request)
+    logger.info(f"[REQUEST DEBUG] Response: {request.method} {request.url.path} -> Status {response.status_code}")
+    return response
+
+
 class ServerHeartbeatRequest(BaseModel):
     droplet_ip: str
     connected_clients: int
@@ -63,11 +79,15 @@ async def start_game_session_api():
             KEY_SHARE_TAG: free_session[1]
         }
     
-    new_session = await dropletManager.create_droplet()
+    try:
+        new_session = await dropletManager.create_droplet()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     new_share_tag = databaseManager.get_share_tag_by_ipv4(new_session)
 
-    if KEY_ERROR in new_session or not new_share_tag:
-        raise HTTPException(status_code=500, detail=new_session[KEY_ERROR])
+    if not new_share_tag:
+        raise HTTPException(status_code=500, detail="Droplet was created but share tag lookup failed.")
 
     return {
         KEY_IP_ADDRESS: new_session,
@@ -83,8 +103,9 @@ def join_game_session_api(game_tag: str):
         KEY_IP_ADDRESS: result}
 
 
-@app.post("/sessions/end")
-def end_game_session_api(droplet_ip: str):
+@app.post("/server/end")
+def end_game_session_api(droplet_ip: str, _: None = Depends(require_internal_hmac)):
+    logger.info(f"[API DEBUG] /server/end endpoint reached - droplet_ip: {droplet_ip}")
     droplet_id = databaseManager.get_droplet_id(droplet_ip)
     removed = databaseManager.remove_droplet_from_db(droplet_ip)
     if not removed:
@@ -98,12 +119,11 @@ def end_game_session_api(droplet_ip: str):
 
 
 @app.post("/server/heartbeat")
-def server_heartbeat(request: ServerHeartbeatRequest):
-    success = databaseManager.update_or_insert_game_droplet(request.droplet_ip, request.connected_clients)
+def server_heartbeat(heartbeat_data: ServerHeartbeatRequest, _: None = Depends(require_internal_hmac)):
+    logger.info(f"[API DEBUG] /server/heartbeat endpoint reached - droplet_ip: {heartbeat_data.droplet_ip}, connected_clients: {heartbeat_data.connected_clients}")
+    success = databaseManager.update_or_insert_game_droplet(heartbeat_data.droplet_ip, heartbeat_data.connected_clients)
     if not success:
         raise HTTPException(status_code=404, detail=ERROR_DROPLET_NOT_FOUND_DB)
     return {
         KEY_MESSAGE: MSG_HEARTBEAT_UPDATED,
-        KEY_IP_ADDRESS: request.droplet_ip,
-        KEY_CONNECTED_CLIENTS: request.connected_clients
     }

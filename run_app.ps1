@@ -94,7 +94,19 @@ if ($Debug) {
         Write-Host "Debug: Waiting for client before start"
     }
 }
-Write-Host "API Documentation: http://{$HostIP}:$Port/docs"
+
+$sslCertFile = [Environment]::GetEnvironmentVariable("SSL_CERTFILE")
+$sslKeyFile = [Environment]::GetEnvironmentVariable("SSL_KEYFILE")
+
+if ([string]::IsNullOrWhiteSpace($sslCertFile) -or [string]::IsNullOrWhiteSpace($sslKeyFile)) {
+    Write-Error "TLS is required. Set both SSL_CERTFILE and SSL_KEYFILE in your .env."
+    exit 1
+}
+
+Write-Host "TLS: Enabled"
+Write-Host "SSL_CERTFILE: $sslCertFile"
+Write-Host "SSL_KEYFILE: $sslKeyFile"
+Write-Host "API Documentation: https://{$HostIP}:$Port/docs"
 Write-Host ""
 
 # Start the server
@@ -103,6 +115,7 @@ if (-not $NoReload) {
     $uvicornArgs += "--reload"
 }
 $uvicornArgs += @("--host", $HostIP, "--port", $Port)
+$uvicornArgs += @("--ssl-certfile", $sslCertFile, "--ssl-keyfile", $sslKeyFile)
 
 if ($Debug) {
     $debugArgs = @("--listen", "127.0.0.1:$DebugPort")

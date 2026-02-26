@@ -43,16 +43,50 @@ DROPLET_TAG=your_droplet_tag
 SNAPSHOT_ID=your_snapshot_id
 DROPLET_REGION=your_region
 DROPLET_SIZE=your_size
+INTERNAL_HMAC_SECRET=your_internal_hmac_secret
+SSL_CERTFILE=certs/server.crt
+SSL_KEYFILE=certs/server.key
 CORS_ALLOWED_ORIGINS=https://test.femquest.gamelabgraz,https://test.femquest.gamelabgraz.at,https://femquest.gamelabgraz.at
 ```
 
-#### 2. Run the app:
+#### Internal server endpoint auth (HMAC)
+
+Internal endpoints (`/server/end`, `/server/heartbeat`) require these headers:
+
+- `Request-Timestamp` (or `Request_Timestamp`): current Unix timestamp (seconds)
+- `Request-Signature` (or `Request_Signature`): hex HMAC-SHA256 over:
+
+`METHOD + "\n" + PATH + "\n" + QUERY + "\n" + TIMESTAMP + "\n" + SHA256_HEX(BODY_BYTES)`
+
+Using shared secret `INTERNAL_HMAC_SECRET`. Default allowed clock skew is 300 seconds.
+
+Generate headers with helper script:
+
+```powershell
+./scripts/test_server_end.ps1 -Insecure -DropletIp 10.0.0.1
+./scripts/test_server_heartbeat.ps1 -Insecure -DropletIp 10.0.0.1 -ConnectedClients 1
+```
+
+These scripts generate and apply `Request_Timestamp` and `Request_Signature` automatically.
+
+#### 2. Create local TLS certs (development):
+
+```powershell
+mkdir certs -ErrorAction SilentlyContinue
+openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 365 \
+  -keyout certs/server.key -out certs/server.crt -subj "/CN=localhost"
+```
+
+If your machine does not have `openssl`, install it or generate equivalent cert/key files and place them at the paths configured by `SSL_CERTFILE` and `SSL_KEYFILE`.
+
+#### 3. Run the app:
 
 ```powershell
 .\run_app.ps1
 ```
 
-This script creates a virtual environment, installs dependencies, creates the database if missing, and starts the API at `http://localhost:8000`.
+This script creates a virtual environment, installs dependencies, creates the database if missing, and starts the API with TLS at `https://localhost:8000`.
+Startup fails if `SSL_CERTFILE` or `SSL_KEYFILE` is missing.
 
 ### ... with Docker
 
@@ -66,6 +100,7 @@ docker run -p 8000:8000 --env-file .env game-orchestrator
 ```
 
 The container entrypoint will create the database if `DB_PATH` is set and the file does not exist.
+TLS is required and startup fails if `SSL_CERTFILE` or `SSL_KEYFILE` is missing.
 
 ## Host On DigitalOcean
 
@@ -93,6 +128,9 @@ DROPLET_TAG=your_droplet_tag
 SNAPSHOT_ID=your_snapshot_id
 DROPLET_REGION=your_region
 DROPLET_SIZE=your_size
+INTERNAL_HMAC_SECRET=your_internal_hmac_secret
+SSL_CERTFILE=/app/certs/server.crt
+SSL_KEYFILE=/app/certs/server.key
 CORS_ALLOWED_ORIGINS=http://test.femquest.gamelabgraz,http://femquest.gamelabgraz.at
 EOF
 
@@ -100,6 +138,7 @@ EOF
 docker build -f dockerfile -t game-orchestrator .
 docker run -d --name game-orchestrator -p 8000:8000 \
   --env-file .env \
+  -v /opt/game-orchestrator/certs:/app/certs \
   -v /opt/game-orchestrator/data:/data \
   game-orchestrator
 ```
