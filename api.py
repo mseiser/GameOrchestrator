@@ -68,7 +68,7 @@ class ServerHeartbeatRequest(BaseModel):
     connected_clients: int
 
 
-# API Endpoints
+# WebGL Endpoints
 @app.post("/sessions/start")
 async def start_game_session_api():
     free_session = databaseManager.get_droplets_without_player()
@@ -103,6 +103,7 @@ def join_game_session_api(game_tag: str):
         KEY_IP_ADDRESS: result}
 
 
+# Server management endpoints (internal use only, protected by HMAC)
 @app.post("/server/end")
 def end_game_session_api(droplet_ip: str, _: None = Depends(require_internal_hmac)):
     logger.info(f"[API DEBUG] /server/end endpoint reached - droplet_ip: {droplet_ip}")
