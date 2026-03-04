@@ -3,6 +3,7 @@ version: '3.8'
 services:
   game-orchestrator:
     build: .
+    image: game-orchestrator:latest
     container_name: game-orchestrator
     ports:
       - "8000:8000"

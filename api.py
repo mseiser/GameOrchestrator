@@ -11,7 +11,7 @@ from backend.droplet_manager import DropletManager
 from backend.database_manager import DBManager
 from backend.security import require_internal_hmac
 from backend.constants import (
-    KEY_ERROR, KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS, KEY_CONNECTED_CLIENTS,
+    KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS,
     ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
 )
 
