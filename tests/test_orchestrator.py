@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from backend.database_manager import DBManager
+from app.backend.database_manager import DBManager
 
 
 class TestDatabaseFlow(unittest.TestCase):

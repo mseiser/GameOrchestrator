@@ -10,12 +10,16 @@ Write-Host "==== Starting HTTP-only Game Orchestrator (TEST MODE) ===="
 Write-Host "WARNING: Running without TLS - for testing only!"
 Write-Host ""
 
+# Navigate to project root
+$projectRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $projectRoot
+
 # Activate virtual environment
-& ".\.venv\Scripts\Activate.ps1"
+& ".venv\Scripts\Activate.ps1"
 
 # Load environment variables
-if (Test-Path ".\.env") {
-    Get-Content .\.env | ForEach-Object {
+if (Test-Path ".env") {
+    Get-Content .env | ForEach-Object {
         if ($_ -match '^\s*([^#=]+)=(.*)$') {
             $name = $matches[1].Trim()
             $value = $matches[2].Trim()

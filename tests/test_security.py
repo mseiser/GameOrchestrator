@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from backend.security import require_internal_hmac
+from app.backend.security import require_internal_hmac
 
 
 def _sign_headers(secret: str, method: str, path: str, query: str = "", body: bytes = b"", timestamp: int | None = None):

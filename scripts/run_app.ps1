@@ -17,8 +17,12 @@ param(
 
 Write-Host "==== Game Orchestrator Setup ===="
 
+# Navigate to project root
+$projectRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $projectRoot
+
 # Check if virtual environment exists
-if (-not (Test-Path ".\.venv")) {
+if (-not (Test-Path ".venv")) {
     Write-Host "Virtual environment not found. Creating one..."
     python -m venv .venv
     if ($LASTEXITCODE -ne 0) {
@@ -29,11 +33,11 @@ if (-not (Test-Path ".\.venv")) {
 
 # Activate virtual environment
 Write-Host "Activating virtual environment..."
-& ".\\.venv\\Scripts\\Activate.ps1"
+& ".venv\Scripts\Activate.ps1"
 
 # Install/update requirements
 Write-Host "Installing dependencies..."
-pip install -q -r requirements.txt
+pip install -q -r app/requirements.txt
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to install requirements"
     exit 1
@@ -50,12 +54,12 @@ if ($Debug) {
 
 # Load environment variables
 Write-Host "Loading environment configuration..."
-if (-not (Test-Path ".\.env")) {
+if (-not (Test-Path ".env")) {
     Write-Warning ".env file not found. Continuing without environment variables."
     Write-Host "Please create .env file with DB_PATH and other required variables."
 }
 else {
-    Get-Content .\.env | ForEach-Object {
+    Get-Content .env | ForEach-Object {
         if ($_ -match '^\s*([^#=]+)=(.*)$') {
             $name = $matches[1].Trim()
             $value = $matches[2].Trim()
@@ -69,7 +73,7 @@ Write-Host "Checking database..."
 $dbPath = [Environment]::GetEnvironmentVariable("DB_PATH")
 if ($dbPath -and -not (Test-Path $dbPath)) {
     Write-Host "Database not found at $dbPath. Creating..."
-    python db\database_setup.py
+    python app/db/database_setup.py
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to create database"
         exit 1

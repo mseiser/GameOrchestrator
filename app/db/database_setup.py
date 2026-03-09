@@ -2,10 +2,15 @@
 
 import sqlite3
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 DB_PATH = os.getenv("DB_PATH")
+
+# Ensure the directory exists
+db_dir = Path(DB_PATH).parent
+db_dir.mkdir(parents=True, exist_ok=True)
 
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()

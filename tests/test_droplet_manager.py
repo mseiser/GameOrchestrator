@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from backend.droplet_manager import DropletManager
+from app.backend.droplet_manager import DropletManager
 
 
 class TestDropletManager(unittest.TestCase):
@@ -13,7 +13,7 @@ class TestDropletManager(unittest.TestCase):
         self.db_manager = MagicMock()
         self.manager = DropletManager(self.db_manager, token="test-token")
 
-    @patch("backend.droplet_manager.requests.get")
+    @patch("app.backend.droplet_manager.requests.get")
     def test_fetch_tagged_droplets_updates_database(self, mock_get):
         droplets = [{"id": 1, "networks": {"v4": [{"ip_address": "10.0.0.1"}]}}]
         mock_response = MagicMock()
@@ -46,7 +46,7 @@ class TestDropletManager(unittest.TestCase):
         self.assertEqual(result, 88)
         mock_fetch.assert_called_once()
 
-    @patch("backend.droplet_manager.requests.delete")
+    @patch("app.backend.droplet_manager.requests.delete")
     def test_delete_droplet_success(self, mock_delete):
         mock_response = MagicMock()
         mock_response.status_code = 204
@@ -56,7 +56,7 @@ class TestDropletManager(unittest.TestCase):
 
         self.assertEqual(result, {"message": "Droplet 99 deleted successfully."})
 
-    @patch("backend.droplet_manager.requests.post")
+    @patch("app.backend.droplet_manager.requests.post")
     def test_create_droplet_updates_database(self, mock_post):
         new_droplet = {
             "id": 777,

@@ -3,3 +3,11 @@ __pycache__
 .env
 *.pyc
 .git
+tests/
+scripts/
+tmp/
+README.md
+.vscode/
+.gitignore
+*.drawio
+*.png

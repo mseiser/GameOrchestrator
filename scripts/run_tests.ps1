@@ -3,6 +3,8 @@
 #   .\run_tests.ps1
 
 # Set PYTHONPATH to include the project root
-$env:PYTHONPATH = $PWD
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$env:PYTHONPATH = $projectRoot
+Set-Location $projectRoot
 
 python -m unittest discover -s tests -p "test_*.py"
