@@ -7,13 +7,24 @@ import logging
 import os
 from dotenv import load_dotenv
 
-from .backend.droplet_manager import DropletManager
-from .backend.database_manager import DBManager
-from .backend.security import require_internal_hmac
-from .backend.constants import (
-    KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS,
-    ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
-)
+try:
+    # Try relative import first (for running as module/package)
+    from .backend.droplet_manager import DropletManager
+    from .backend.database_manager import DBManager
+    from .backend.security import require_internal_hmac
+    from .backend.constants import (
+        KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS,
+        ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
+    )
+except ImportError:
+    # Fall back to absolute import (for Docker where workdir is /app)
+    from backend.droplet_manager import DropletManager
+    from backend.database_manager import DBManager
+    from backend.security import require_internal_hmac
+    from backend.constants import (
+        KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS,
+        ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
+    )
 
 databaseManager = DBManager()
 dropletManager = DropletManager(databaseManager)

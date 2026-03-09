@@ -3,6 +3,8 @@ services:
     build: ./app
     container_name: femquest-orchestrator-api
     restart: unless-stopped
+    env_file:
+      - .env
 
   caddy:
     image: caddy:2
