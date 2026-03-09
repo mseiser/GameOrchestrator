@@ -110,7 +110,7 @@ Write-Host "API Documentation: https://{$HostIP}:$Port/docs"
 Write-Host ""
 
 # Start the server
-$uvicornArgs = @("api:app")
+$uvicornArgs = @("app.api:app")
 if (-not $NoReload) {
     $uvicornArgs += "--reload"
 }

@@ -29,4 +29,4 @@ Write-Host "Port: $Port"
 Write-Host "API Documentation: http://$($HostIP):$Port/docs"
 Write-Host ""
 
-python -m uvicorn api:app --host $HostIP --port $Port --reload
+python -m uvicorn app.api:app --host $HostIP --port $Port --reload

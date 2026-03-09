@@ -1,24 +1,23 @@
-version: '3.8'
-
 services:
-  game-orchestrator:
-    build: .
-    image: game-orchestrator:latest
-    container_name: game-orchestrator
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./certs:/app/certs
-      - ./db_data:/app/db_data
-    environment:
-      - DB_PATH=/app/db_data/femquest.db
-      - SSL_CERTFILE=/app/certs/server.crt
-      - SSL_KEYFILE=/app/certs/server.key
-      - INTERNAL_HMAC_KEY=${INTERNAL_HMAC_KEY}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
-      - SNAPSHOT_ID=${SNAPSHOT_ID}
-      - DROPLET_TAG=${DROPLET_TAG}
-      - DROPLET_REGION=${DROPLET_REGION}
-      - DROPLET_SIZE=${DROPLET_SIZE}
-      - DIGITALOCEAN_TOKEN=${DIGITALOCEAN_TOKEN}
+  api:
+    build: ./app
+    container_name: femquest-orchestrator-api
     restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: femquest-orchestrator-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  caddy_data:
+  caddy_config:
