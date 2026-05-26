@@ -41,14 +41,15 @@ def _get_cors_allowed_origins() -> list[str]:
         return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
     return [
-        "https://test.femquest.gamelabgraz",
-        "https://test.femquest.gamelabgraz.at",
+        "http://test2.femquest.gamelabgraz.at",
+        "https://test2.femquest.gamelabgraz.at",
+        "http://femquest.gamelabgraz.at",
         "https://femquest.gamelabgraz.at",
     ]
 
 
 cors_allowed_origins = _get_cors_allowed_origins()
-_CORS_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+_CORS_REGEX = r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|https?://([a-z0-9-]+\.)*femquest\.gamelabgraz\.at(:\d+)?)$"
 
 app.add_middleware(
     CORSMiddleware,

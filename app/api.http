@@ -1,14 +1,13 @@
-@baseUrl = https://localhost:8000
+@localTestOrchestratorURL = "http://127.0.0.1:8000"
 
-# Internal endpoints require HMAC headers.
-# For internal endpoint testing, use:
-# ./scripts/test_server_end.ps1 -Insecure -DropletIp 10.0.0.1
-# ./scripts/test_server_heartbeat.ps1 -Insecure -DropletIp 10.0.0.1 -ConnectedClients 1
+GET {{localTestOrchestratorURL}}/
 
-### Start session (reuse or create)
-POST {{baseUrl}}/sessions/start
-Accept: application/json
+###  Send heartbeat
+POST {{localTestOrchestratorURL}}/server/heartbeat?droplet_ip=10.0.0.1
 
-### Login to session (replace TAG123)
-POST {{baseUrl}}/sessions/join?game_tag=TAG123
-Accept: application/json
+###  Stop a server
+POST {{localTestOrchestratorURL}}/server/end?droplet_ip=10.0.0.1
+
+### Start a server
+POST {{localTestOrchestratorURL}}/sessions/start
+
