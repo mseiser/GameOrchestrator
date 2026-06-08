@@ -15,6 +15,7 @@ ERROR_DROPLET_NOT_FOUND_DB = "Droplet not found in database."
 ERROR_DROPLET_NOT_FOUND_DO = "Droplet does not exist in DigitalOcean."
 ERROR_TOKEN_NOT_SET = "DIGITALOCEAN_TOKEN is not set"
 ERROR_TAG_NOT_SET = "DROPLET_TAG is not set"
+ERROR_SNAPSHOT_NOT_SET = "SNAPSHOT_ID is not set"
 
 # Warning messages
 WARN_DROPLET_NOT_IN_DO = "Droplet {droplet_id} does not exist in DigitalOcean."

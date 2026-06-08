@@ -1,96 +1,87 @@
 param(
-    [string]$RemoteServer = "root@femquestorchestrator.mariasgames.xyz",
-    [string]$RemotePath = "/orchestrator",
-    [int]$SshPort = 22,
-    [switch]$UseSudo,
-    [switch]$SkipEnvFile,
-    [switch]$StopExisting,
-    [switch]$ForceRecreate
+    [string]$RemoteTarget = "root@femquestorchestrator.mariasgames.xyz:/orchestrator",
+    [string]$ArchiveName = "app.tar"
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
-function Invoke-RemoteCommand {
+$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$stagingRoot = Join-Path $env:TEMP ("app" + [guid]::NewGuid().ToString("N"))
+$stagingApp = Join-Path $stagingRoot "app"
+$archivePath = Join-Path $repoRoot $ArchiveName
+
+function Assert-CommandExists {
     param(
-        [Parameter(Mandatory = $true)][string]$Command
+        [string]$Name
     )
 
-    $sshArgs = @()
-    if ($SshPort -and $SshPort -ne 22) {
-        $sshArgs += '-p'
-        $sshArgs += $SshPort
+    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+        throw "Required command '$Name' was not found in PATH."
     }
-    $sshArgs += $RemoteServer
-    $sshArgs += $Command
-
-    $output = & ssh @sshArgs 2>&1
-    $exit = $LASTEXITCODE
-    if ($exit -ne 0) {
-        $msg = $output -join "`n"
-        throw "Remote command failed: $Command`n$msg"
-    }
-}
-
-function Copy-LocalPathToRemote {
-    param(
-        [Parameter(Mandatory = $true)][string]$LocalPath,
-        [Parameter(Mandatory = $true)][string]$TargetPath
-    )
-
-    $SourcePath = Join-Path $projectRoot $LocalPath
-    $scpArgs = @()
-    if ($SshPort -and $SshPort -ne 22) {
-        $scpArgs += '-P'
-        $scpArgs += $SshPort
-    }
-    $scpArgs += '-r'
-    $scpArgs += $SourcePath
-    $scpArgs += "${RemoteServer}:$TargetPath"
-
-    & scp @scpArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to copy $LocalPath to $TargetPath"
-    }
-}
-
-$projectRoot = $PSScriptRoot
-Set-Location $projectRoot
-
-Write-Host "Deploying Game Orchestrator to ${RemoteServer}:$RemotePath"
-
-Invoke-RemoteCommand "mkdir -p $RemotePath"
-
-Copy-LocalPathToRemote -LocalPath "app" -TargetPath "$RemotePath/"
-Copy-LocalPathToRemote -LocalPath "docker-compose.yml" -TargetPath "$RemotePath/"
-Copy-LocalPathToRemote -LocalPath "Caddyfile" -TargetPath "$RemotePath/"
-
-if (-not $SkipEnvFile -and (Test-Path ".env")) {
-    Copy-LocalPathToRemote -LocalPath ".env" -TargetPath "$RemotePath/"
-}
-elseif (-not $SkipEnvFile) {
-    Write-Warning ".env was not found locally, so it was not copied. Ensure the server already has $RemotePath/.env configured."
 }
 
 try {
-        $sudoPrefix = if ($UseSudo) { 'sudo ' } else { '' }
-        $forceArgs = if ($ForceRecreate) { '--force-recreate --build' } else { '--build' }
+    Assert-CommandExists -Name "tar"
+    Assert-CommandExists -Name "scp"
+    Assert-CommandExists -Name "ssh"
 
-        Write-Host "Changing to remote directory: $RemotePath"
-        Invoke-RemoteCommand "cd $RemotePath"
+    $remoteParts = $RemoteTarget -split ":", 2
+    if ($remoteParts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($remoteParts[0]) -or [string]::IsNullOrWhiteSpace($remoteParts[1])) {
+        throw "RemoteTarget must be in the form user@host:/remote/path"
+    }
 
-        if ($StopExisting) {
-                Write-Host "Stopping existing compose stack on remote (if any)"
-                $downCmd = "if docker compose version >/dev/null 2>&1; then $sudoPrefix docker compose down --remove-orphans || true; elif command -v docker-compose >/dev/null 2>&1; then $sudoPrefix docker-compose down --remove-orphans || true; else echo 'No compose binary found to stop' >&2; fi"
-                Invoke-RemoteCommand "cd $RemotePath && $downCmd"
+    $remoteHost = $remoteParts[0]
+    $remotePath = $remoteParts[1]
+    $remoteArchivePath = ($remotePath.TrimEnd('/') + '/' + $ArchiveName)
+
+    $requiredPaths = @(
+        (Join-Path $repoRoot "Caddyfile"),
+        (Join-Path $repoRoot "docker-compose.yml"),
+        (Join-Path $repoRoot ".env"),
+        (Join-Path $repoRoot "app")
+    )
+
+    foreach ($path in $requiredPaths) {
+        if (-not (Test-Path $path)) {
+            throw "Required path not found: $path"
         }
+    }
 
-        Write-Host "Starting docker compose on remote"
-        $composeCmd = "if docker compose version >/dev/null 2>&1; then $sudoPrefix docker compose up -d $forceArgs; elif command -v docker-compose >/dev/null 2>&1; then $sudoPrefix docker-compose up -d $forceArgs; else echo 'No docker compose binary found on remote' >&2; exit 1; fi"
-        Invoke-RemoteCommand "cd $RemotePath && $composeCmd"
+    if (Test-Path $stagingRoot) {
+        Remove-Item -Recurse -Force $stagingRoot
+    }
 
+    New-Item -ItemType Directory -Force -Path $stagingApp | Out-Null
+
+    Copy-Item (Join-Path $repoRoot "Caddyfile") -Destination $stagingRoot
+    Copy-Item (Join-Path $repoRoot "docker-compose.yml") -Destination $stagingRoot
+    Copy-Item (Join-Path $repoRoot ".env") -Destination $stagingRoot
+    Copy-Item (Join-Path $repoRoot "app\*") -Destination $stagingApp -Recurse -Force
+
+    if (Test-Path $archivePath) {
+        Remove-Item -Force $archivePath
+    }
+
+    Push-Location $stagingRoot
+    try {
+        tar -cf $archivePath "Caddyfile" "docker-compose.yml" ".env" "app"
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Host "Created archive: $archivePath"
+    Write-Host "Uploading to: $RemoteTarget"
+
+    scp $archivePath $RemoteTarget
+
+    ssh $remoteHost "mkdir -p '$remotePath' && tar -xf '$remoteArchivePath' -C '$remotePath' && rm -f '$remoteArchivePath'"
+
+    Write-Host "Deploy archive uploaded successfully."
 }
-catch {
-        throw "Remote command failed: cd $RemotePath && docker compose up -d --build`n$($_.Exception.Message)"
+finally {
+    if (Test-Path $stagingRoot) {
+        Remove-Item -Recurse -Force $stagingRoot
+    }
 }
-
-Write-Host "Deployment completed successfully."

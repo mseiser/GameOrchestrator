@@ -3,6 +3,7 @@
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import sqlite3
 import logging
 import os
 from dotenv import load_dotenv
@@ -13,7 +14,7 @@ try:
     from .backend.database_manager import DBManager
     from .backend.security import require_internal_hmac
     from .backend.constants import (
-        KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS,
+        KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS, KEY_CONNECTED_CLIENTS, KEY_LAST_HEARTBEAT, KEY_DROPLET_ID,
         ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
     )
 except ImportError:
@@ -22,7 +23,7 @@ except ImportError:
     from backend.database_manager import DBManager
     from backend.security import require_internal_hmac
     from backend.constants import (
-        KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS,
+        KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS, KEY_CONNECTED_CLIENTS, KEY_LAST_HEARTBEAT, KEY_DROPLET_ID,
         ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
     )
 
@@ -32,6 +33,11 @@ dropletManager = DropletManager(databaseManager)
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # Set to DEBUG for detailed logs
+handler = logging.StreamHandler()
+formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s') 
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 app = FastAPI(title="Game Orchestrator API")
 
 
@@ -117,6 +123,21 @@ def join_game_session_api(game_tag: str):
         raise HTTPException(status_code=404, detail=ERROR_DROPLET_NOT_FOUND_DB)
     return {
         KEY_IP_ADDRESS: result}
+
+
+@app.get("/sessions/running")
+def list_running_games_api():
+    running_games = databaseManager.get_running_games()
+    return [
+        {
+            KEY_IP_ADDRESS: ipv4,
+            KEY_CONNECTED_CLIENTS: connected_clients,
+            KEY_LAST_HEARTBEAT: last_heartbeat,
+            KEY_DROPLET_ID: droplet_id,
+            KEY_SHARE_TAG: share_tag,
+        }
+        for ipv4, connected_clients, last_heartbeat, droplet_id, share_tag in running_games
+    ]
 
 
 # Server management endpoints (internal use only, protected by HMAC)

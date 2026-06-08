@@ -17,4 +17,4 @@ fi
 
 # Start API on internal port (TLS handled by Caddy reverse proxy)
 echo "Starting API on port 8000"
-exec python -m uvicorn api:app --host 0.0.0.0 --port 8000
+exec python -m uvicorn api:app --host 0.0.0.0 --port 8000 --log-level info

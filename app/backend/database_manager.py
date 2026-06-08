@@ -2,15 +2,31 @@
 
 import sqlite3
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 _ENV_DB_PATH = os.getenv("DB_PATH")
 
 class DBManager:
     def __init__(self, db=None):
         self.db = db or _ENV_DB_PATH
+
+    def insert_new_droplet(self, droplet_id: int, ipv4: str):
+        conn = sqlite3.connect(self.db)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO game_droplets (droplet_id, ipv4)
+            VALUES (?, ?)
+            ON CONFLICT(ipv4) DO UPDATE SET
+                    droplet_id=excluded.droplet_id,
+                    last_heartbeat=CURRENT_TIMESTAMP
+                """,
+                (ipv4, droplet_id),
+            )
+        conn.commit()
+        conn.close()
 
     def update_db_with_droplets(self, droplets):
         conn = sqlite3.connect(self.db)
@@ -47,6 +63,20 @@ class DBManager:
         conn.commit()
         conn.close()
         return True
+
+    def get_running_games(self):
+        conn = sqlite3.connect(self.db)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT ipv4, connected_clients, last_heartbeat, droplet_id, share_tag
+            FROM game_droplets
+            ORDER BY last_heartbeat DESC
+            """,
+        )
+        running_games = [row for row in cur.fetchall()]
+        conn.close()
+        return running_games
 
     def get_droplets_without_player(self):
         conn = sqlite3.connect(self.db)
