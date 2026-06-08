@@ -2,7 +2,7 @@
 
 import os
 import logging
-from time import time
+import asyncio
 from dotenv import load_dotenv, find_dotenv
 from pydo import Client
 from .database_manager import DBManager
@@ -111,7 +111,7 @@ class DropletManager:
         # Wait for droplet to be active and get details
         new_droplet_ip = None
         for _ in range(30):  # Retry for up to ~5 minutes
-            time.sleep(10)  # Wait before checking status
+            await asyncio.sleep(10) # Wait before checking status
             new_droplet_details = self.client.droplets.get(new_droplet_id)
             new_ip_address = self._extract_ipv4(new_droplet_details)
             if new_ip_address:
@@ -119,7 +119,7 @@ class DropletManager:
         if not new_droplet_ip:
             raise ValueError("Droplet creation response missing id or ipv4 address.")
         
-        self.dbManafger.insert_new_droplet(new_droplet_id, new_ip_address)
+        self.dbManager.insert_new_droplet(new_droplet_id, new_ip_address)
         return new_droplet_ip
               
        
