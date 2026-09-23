@@ -23,10 +23,70 @@ class DBManager:
                     droplet_id=excluded.droplet_id,
                     last_heartbeat=CURRENT_TIMESTAMP
                 """,
-                (ipv4, droplet_id),
+                (droplet_id, ipv4),
             )
         conn.commit()
         conn.close()
+
+    def register_server(self, ipv4: str, connected_clients: int):
+        conn = sqlite3.connect(self.db)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO game_droplets (ipv4, connected_clients, last_heartbeat)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(ipv4) DO UPDATE SET
+                connected_clients=excluded.connected_clients,
+                last_heartbeat=CURRENT_TIMESTAMP
+            """,
+            (ipv4, connected_clients),
+        )
+        cur.execute("SELECT share_tag FROM game_droplets WHERE ipv4 = ?", (ipv4,))
+        result = cur.fetchone()
+        conn.commit()
+        conn.close()
+        return result[0] if result else None
+
+    def register_server_with_share_tag(self, ipv4: str, connected_clients: int, share_tag: str):
+        conn = sqlite3.connect(self.db)
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                INSERT INTO game_droplets (ipv4, connected_clients, last_heartbeat, share_tag)
+                VALUES (?, ?, CURRENT_TIMESTAMP, ?)
+                ON CONFLICT(ipv4) DO UPDATE SET
+                    connected_clients=excluded.connected_clients,
+                    last_heartbeat=CURRENT_TIMESTAMP,
+                    share_tag=excluded.share_tag
+                """,
+                (ipv4, connected_clients, share_tag),
+            )
+        except sqlite3.IntegrityError:
+            # share_tag is UNIQUE; another row grabbed it in a race, caller should fall back.
+            conn.rollback()
+            conn.close()
+            return None
+        conn.commit()
+        conn.close()
+        return share_tag
+        return share_tag
+
+    def update_heartbeat_by_share_tag(self, share_tag: str, connected_clients: int):
+        conn = sqlite3.connect(self.db)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE game_droplets
+            SET connected_clients = ?, last_heartbeat = CURRENT_TIMESTAMP
+            WHERE share_tag = ?
+            """,
+            (connected_clients, share_tag),
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated
 
     def update_db_with_droplets(self, droplets):
         conn = sqlite3.connect(self.db)

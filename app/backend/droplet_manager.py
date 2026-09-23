@@ -115,6 +115,7 @@ class DropletManager:
             new_droplet_details = self.client.droplets.get(new_droplet_id)
             new_ip_address = self._extract_ipv4(new_droplet_details)
             if new_ip_address:
+                new_droplet_ip = new_ip_address
                 break
         if not new_droplet_ip:
             raise ValueError("Droplet creation response missing id or ipv4 address.")

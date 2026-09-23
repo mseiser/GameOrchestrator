@@ -8,6 +8,7 @@ KEY_IP_ADDRESS = "ip_address"
 KEY_CONNECTED_CLIENTS = "connected_clients"
 KEY_SHARE_TAG = "share_tag"
 KEY_LAST_HEARTBEAT = "last_heartbeat"
+KEY_HOSTNAME = "hostname"
 
 # Error messages
 ERROR_NO_ACTIVE_SESSION = "No active game session found for this user and game."

@@ -33,7 +33,7 @@ FOR EACH ROW
 WHEN NEW.share_tag IS NULL
 BEGIN
     UPDATE game_droplets
-    SET share_tag = substr(hex(randomblob(3)), 1, 6)
+    SET share_tag = lower(substr(hex(randomblob(3)), 1, 6))
     WHERE rowid = NEW.rowid;
 END;
 """)

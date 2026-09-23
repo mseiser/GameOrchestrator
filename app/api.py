@@ -2,35 +2,38 @@
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import sqlite3
 import logging
 import os
 from dotenv import load_dotenv
 
+load_dotenv()
+
 try:
     # Try relative import first (for running as module/package)
     from .backend.droplet_manager import DropletManager
     from .backend.database_manager import DBManager
+    from .backend.domain_manager import SpaceshipDnsManager
     from .backend.security import require_internal_hmac
     from .backend.constants import (
         KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS, KEY_CONNECTED_CLIENTS, KEY_LAST_HEARTBEAT, KEY_DROPLET_ID,
-        ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
+        KEY_HOSTNAME, ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
     )
 except ImportError:
     # Fall back to absolute import (for Docker where workdir is /app)
     from backend.droplet_manager import DropletManager
     from backend.database_manager import DBManager
+    from backend.domain_manager import SpaceshipDnsManager
     from backend.security import require_internal_hmac
     from backend.constants import (
         KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS, KEY_CONNECTED_CLIENTS, KEY_LAST_HEARTBEAT, KEY_DROPLET_ID,
-        ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
+        KEY_HOSTNAME, ERROR_DROPLET_NOT_FOUND_DB, MSG_HEARTBEAT_UPDATED
     )
 
 databaseManager = DBManager()
 dropletManager = DropletManager(databaseManager)
-
-load_dotenv()
+domainManager = SpaceshipDnsManager()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set to DEBUG for detailed logs
@@ -43,24 +46,14 @@ app = FastAPI(title="Game Orchestrator API")
 
 def _get_cors_allowed_origins() -> list[str]:
     raw_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
-    if raw_origins.strip():
-        return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
-
-    return [
-        "http://test2.femquest.gamelabgraz.at",
-        "https://test2.femquest.gamelabgraz.at",
-        "http://femquest.gamelabgraz.at",
-        "https://femquest.gamelabgraz.at",
-    ]
+    return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
 
 cors_allowed_origins = _get_cors_allowed_origins()
-_CORS_REGEX = r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|https?://([a-z0-9-]+\.)*femquest\.gamelabgraz\.at(:\d+)?)$"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allowed_origins,
-    allow_origin_regex=_CORS_REGEX,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -86,8 +79,13 @@ async def log_requests(request: Request, call_next):
 
 
 class ServerHeartbeatRequest(BaseModel):
+    share_tag: str
+    connected_clients: int = Field(default=0, ge=0)
+
+
+class ServerRegisterRequest(BaseModel):
     droplet_ip: str
-    connected_clients: int
+    connected_clients: int = Field(default=0, ge=0)
 
 
 # WebGL Endpoints
@@ -97,7 +95,7 @@ async def start_game_session_api():
     if free_session and free_session[0]:
         return {
             KEY_MESSAGE: "Reusing existing droplet",
-            KEY_IP_ADDRESS: free_session[0],
+            KEY_HOSTNAME: domainManager.get_hostname(free_session[1]),
             KEY_SHARE_TAG: free_session[1]
         }
     
@@ -112,17 +110,18 @@ async def start_game_session_api():
         raise HTTPException(status_code=500, detail="Droplet was created but share tag lookup failed.")
 
     return {
-        KEY_IP_ADDRESS: new_session,
+        KEY_HOSTNAME: domainManager.get_hostname(new_share_tag),
         KEY_SHARE_TAG: new_share_tag
     }
 
 @app.post("/sessions/join")
 def join_game_session_api(game_tag: str):
+    game_tag = game_tag.lower()
     result = databaseManager.get_ipv4_by_share_tag(game_tag)
     if not result:
         raise HTTPException(status_code=404, detail=ERROR_DROPLET_NOT_FOUND_DB)
     return {
-        KEY_IP_ADDRESS: result}
+        KEY_HOSTNAME: domainManager.get_hostname(game_tag)}
 
 
 @app.get("/sessions/running")
@@ -130,7 +129,7 @@ def list_running_games_api():
     running_games = databaseManager.get_running_games()
     return [
         {
-            KEY_IP_ADDRESS: ipv4,
+            KEY_HOSTNAME: domainManager.get_hostname(share_tag),
             KEY_CONNECTED_CLIENTS: connected_clients,
             KEY_LAST_HEARTBEAT: last_heartbeat,
             KEY_DROPLET_ID: droplet_id,
@@ -141,16 +140,77 @@ def list_running_games_api():
 
 
 # Server management endpoints (internal use only, protected by HMAC)
+@app.post("/server/register")
+def server_register(server_data: ServerRegisterRequest, _: None = Depends(require_internal_hmac)):
+    if server_data.connected_clients < 0:
+        raise HTTPException(status_code=422, detail="connected_clients cannot be negative.")
+
+    try:
+        existing_share_tag = domainManager.find_share_tag_by_ip(server_data.droplet_ip)
+    except Exception as exc:
+        logger.exception("DNS lookup failed for ip %s", server_data.droplet_ip)
+        raise HTTPException(status_code=502, detail="DNS lookup failed.") from exc
+
+    if existing_share_tag:
+        # share_tag is UNIQUE, so only adopt the tag if it isn't already owned by a different live server.
+        owner_ip = databaseManager.get_ipv4_by_share_tag(existing_share_tag)
+        if owner_ip and owner_ip != server_data.droplet_ip:
+            logger.warning(
+                "DNS tag %s for ip %s is still owned by %s; issuing a fresh tag instead.",
+                existing_share_tag, server_data.droplet_ip, owner_ip,
+            )
+            existing_share_tag = None
+
+    if existing_share_tag:
+        # IP already has a domain under a different tag; adopt it and keep that domain untouched.
+        share_tag = databaseManager.register_server_with_share_tag(
+            server_data.droplet_ip, server_data.connected_clients, existing_share_tag
+        )
+        if share_tag:
+            hostname = domainManager.get_hostname(share_tag)
+        else:
+            existing_share_tag = None
+
+    if not existing_share_tag:
+        share_tag = databaseManager.register_server(
+            server_data.droplet_ip,
+            server_data.connected_clients,
+        )
+        if not share_tag:
+            raise HTTPException(status_code=500, detail="Server registration did not produce a share tag.")
+
+        try:
+            hostname = domainManager.create_game_record(share_tag, server_data.droplet_ip)
+        except Exception as exc:
+            logger.exception("DNS registration failed for share tag %s", share_tag)
+            raise HTTPException(status_code=502, detail="DNS registration failed.") from exc
+
+    return {
+        KEY_MESSAGE: "Server registered successfully.",
+        KEY_IP_ADDRESS: server_data.droplet_ip,
+        KEY_SHARE_TAG: share_tag,
+        KEY_HOSTNAME: hostname,
+    }
+
+
 @app.post("/server/end")
 def end_game_session_api(droplet_ip: str, _: None = Depends(require_internal_hmac)):
     logger.info(f"[API DEBUG] /server/end endpoint reached - droplet_ip: {droplet_ip}")
     droplet_id = databaseManager.get_droplet_id(droplet_ip)
-    removed = databaseManager.remove_droplet_from_db(droplet_ip)
-    if not removed:
+    share_tag = databaseManager.get_share_tag_by_ipv4(droplet_ip)
+    if not share_tag:
         raise HTTPException(status_code=404, detail=ERROR_DROPLET_NOT_FOUND_DB)
 
+    try:
+        domainManager.delete_game_record(share_tag)
+        if droplet_id and droplet_id > 0:
+            dropletManager.delete_droplet(droplet_id)
+    except Exception as exc:
+        logger.exception("Server cleanup failed for share tag %s", share_tag)
+        raise HTTPException(status_code=502, detail="Server cleanup failed.") from exc
+
+    databaseManager.remove_droplet_from_db(droplet_ip)
     if droplet_id and droplet_id > 0:
-        dropletManager.delete_droplet(droplet_id)
         return {KEY_MESSAGE: "Game session ended and DigitalOcean droplet deleted."}
 
     return {KEY_MESSAGE: "Game session ended and local session entry removed (no DigitalOcean droplet)."}
@@ -158,8 +218,16 @@ def end_game_session_api(droplet_ip: str, _: None = Depends(require_internal_hma
 
 @app.post("/server/heartbeat")
 def server_heartbeat(heartbeat_data: ServerHeartbeatRequest, _: None = Depends(require_internal_hmac)):
-    logger.info(f"[API DEBUG] /server/heartbeat endpoint reached - droplet_ip: {heartbeat_data.droplet_ip}, connected_clients: {heartbeat_data.connected_clients}")
-    success = databaseManager.update_or_insert_game_droplet(heartbeat_data.droplet_ip, heartbeat_data.connected_clients)
+    share_tag = heartbeat_data.share_tag.lower()
+    logger.info(f"[API DEBUG] /server/heartbeat endpoint reached - share_tag: {share_tag}, connected_clients: {heartbeat_data.connected_clients}")
+    if heartbeat_data.connected_clients < 0:
+        raise HTTPException(status_code=422, detail="connected_clients cannot be negative.")
+
+    success = databaseManager.update_heartbeat_by_share_tag(
+        share_tag,
+        heartbeat_data.connected_clients,
+    )
+
     if not success:
         raise HTTPException(status_code=404, detail=ERROR_DROPLET_NOT_FOUND_DB)
     return {
