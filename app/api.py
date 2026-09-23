@@ -14,6 +14,7 @@ try:
     # Try relative import first (for running as module/package)
     from .backend.droplet_manager import DropletManager
     from .backend.database_manager import DBManager
+    from .backend.measurement_manager import MeasurementManager
     from .backend.domain_manager import SpaceshipDnsManager
     from .backend.security import require_internal_hmac
     from .backend.constants import (
@@ -24,6 +25,7 @@ except ImportError:
     # Fall back to absolute import (for Docker where workdir is /app)
     from backend.droplet_manager import DropletManager
     from backend.database_manager import DBManager
+    from backend.measurement_manager import MeasurementManager
     from backend.domain_manager import SpaceshipDnsManager
     from backend.security import require_internal_hmac
     from backend.constants import (
@@ -33,6 +35,7 @@ except ImportError:
 
 databaseManager = DBManager()
 dropletManager = DropletManager(databaseManager)
+measurementManager = MeasurementManager()
 domainManager = SpaceshipDnsManager()
 
 logger = logging.getLogger(__name__)
@@ -88,6 +91,24 @@ class ServerRegisterRequest(BaseModel):
     connected_clients: int = Field(default=0, ge=0)
 
 
+class MeasurementEvent(BaseModel):
+    """Mirrors PhysicsQuest.Measurements.MeasurementEvent (Unity).
+
+    Serialised by Newtonsoft.Json as:
+      { "type": "SubquestClosed", "timestamp": 1234567890.123,
+        "payload": { "subquest": "...", "trials": 3, ... } }
+    """
+    type: str
+    timestamp: float
+    payload: dict = {}
+
+
+class MeasurementEventBatch(BaseModel):
+    client_id: str
+    share_tag: str
+    events: list[MeasurementEvent]
+
+
 # WebGL Endpoints
 @app.post("/sessions/start")
 async def start_game_session_api():
@@ -122,6 +143,26 @@ def join_game_session_api(game_tag: str):
         raise HTTPException(status_code=404, detail=ERROR_DROPLET_NOT_FOUND_DB)
     return {
         KEY_HOSTNAME: domainManager.get_hostname(game_tag)}
+
+
+@app.post("/measurements/report")
+def report_measurements(batch: MeasurementEventBatch):
+    """Accept a batch of gameplay measurement events from a WebGL client.
+
+    The share_tag is validated against currently-known running sessions so
+    random noise is filtered out, but the endpoint is otherwise unauthenticated
+    (HMAC secrets must not be shipped in WebGL builds).
+    """
+    share_tag = batch.share_tag.lower()
+    if not databaseManager.get_ipv4_by_share_tag(share_tag):
+        raise HTTPException(status_code=404, detail=ERROR_DROPLET_NOT_FOUND_DB)
+    raw_events = [e.model_dump() for e in batch.events]
+    inserted = measurementManager.insert_events(batch.client_id, share_tag, raw_events)
+    logger.info(
+        f"[MEASUREMENTS] client_id={batch.client_id!r} share_tag={share_tag!r} "
+        f"events_received={len(batch.events)} events_inserted={inserted}"
+    )
+    return {KEY_MESSAGE: "Measurements recorded.", "inserted": inserted}
 
 
 @app.get("/sessions/running")

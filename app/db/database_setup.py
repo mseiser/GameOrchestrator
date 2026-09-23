@@ -41,4 +41,4 @@ END;
 conn.commit()
 conn.close()
 
-print("Database created: femquest.db")
+print(f"Database created: {DB_PATH}")
