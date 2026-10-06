@@ -1,16 +1,29 @@
 services:
   api:
     build: ./app
-    container_name: femquest-orchestrator-api
+    container_name: orchestrator-api
     restart: unless-stopped
     env_file:
       - .env
     volumes:
       - orchestrator_data:/data
 
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit
+    restart: unless-stopped
+    command:
+      - --config
+      - /etc/livekit.yaml
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7881:7881/tcp"
+      - "7882:7882/udp"
+
   caddy:
     image: caddy:2
-    container_name: femquest-orchestrator-caddy
+    container_name: orchestrator-caddy
     restart: unless-stopped
     ports:
       - "80:80"
@@ -21,6 +34,7 @@ services:
       - caddy_config:/config
     depends_on:
       - api
+      - livekit
 
 volumes:
   orchestrator_data:

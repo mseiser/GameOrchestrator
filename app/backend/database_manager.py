@@ -129,7 +129,7 @@ class DBManager:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT ipv4, connected_clients, last_heartbeat, droplet_id, share_tag
+            SELECT share_tag, connected_clients
             FROM game_droplets
             ORDER BY last_heartbeat DESC
             """,

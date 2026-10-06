@@ -7,3 +7,4 @@ python-dotenv>=1.0.0
 pydo>=0.34.0
 asyncio>=3.0.0
 pytest>=8.0.0
+livekit-api>=1.2.1

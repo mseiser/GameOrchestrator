@@ -1,9 +1,10 @@
 """FastAPI endpoints"""
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-import sqlite3
+from typing import Optional, Dict
 import logging
 import os
 from dotenv import load_dotenv
@@ -16,6 +17,7 @@ try:
     from .backend.database_manager import DBManager
     from .backend.measurement_manager import MeasurementManager
     from .backend.domain_manager import SpaceshipDnsManager
+    from .backend.livekit_manager import LiveKitManager
     from .backend.security import require_internal_hmac
     from .backend.constants import (
         KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS, KEY_CONNECTED_CLIENTS, KEY_LAST_HEARTBEAT, KEY_DROPLET_ID,
@@ -27,6 +29,7 @@ except ImportError:
     from backend.database_manager import DBManager
     from backend.measurement_manager import MeasurementManager
     from backend.domain_manager import SpaceshipDnsManager
+    from backend.livekit_manager import LiveKitManager
     from backend.security import require_internal_hmac
     from backend.constants import (
         KEY_MESSAGE, KEY_SHARE_TAG, KEY_IP_ADDRESS, KEY_CONNECTED_CLIENTS, KEY_LAST_HEARTBEAT, KEY_DROPLET_ID,
@@ -37,6 +40,7 @@ databaseManager = DBManager()
 dropletManager = DropletManager(databaseManager)
 measurementManager = MeasurementManager()
 domainManager = SpaceshipDnsManager()
+livekitManager = LiveKitManager()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set to DEBUG for detailed logs
@@ -102,11 +106,19 @@ class MeasurementEvent(BaseModel):
     timestamp: float
     payload: dict = {}
 
-
 class MeasurementEventBatch(BaseModel):
     client_id: str
     share_tag: str
     events: list[MeasurementEvent]
+
+
+class VoiceTokenRequest(BaseModel):
+    room_name: str
+    participant_identity: str
+    participant_name: str
+    participant_metadata: Optional[str] = None
+    participant_attributes: Optional[Dict[str, str]] = None
+    room_config: Optional[dict] = None
 
 
 # WebGL Endpoints
@@ -142,7 +154,20 @@ def join_game_session_api(game_tag: str):
     if not result:
         raise HTTPException(status_code=404, detail=ERROR_DROPLET_NOT_FOUND_DB)
     return {
-        KEY_HOSTNAME: domainManager.get_hostname(game_tag)}
+        KEY_HOSTNAME: domainManager.get_hostname(game_tag)
+    }
+
+@app.get("/sessions/running")
+def list_running_games_api():
+    running_games = databaseManager.get_running_games()
+    array_of_running_games = []
+    for share_tag, connected_clients in running_games:
+        array_of_running_games.append({
+            KEY_HOSTNAME: domainManager.get_hostname(share_tag),
+            KEY_CONNECTED_CLIENTS: connected_clients,
+            KEY_SHARE_TAG: share_tag,
+        })
+    return array_of_running_games
 
 
 @app.post("/measurements/report")
@@ -164,20 +189,23 @@ def report_measurements(batch: MeasurementEventBatch):
     )
     return {KEY_MESSAGE: "Measurements recorded.", "inserted": inserted}
 
+@app.post("/livekit/roomtoken")
+def get_voice_token(voice_request: VoiceTokenRequest, status_code=201):
+    livekit_manager = LiveKitManager()
+    token = livekit_manager.get_room_token(
+        room_name=voice_request.room_name,
+        participant_identity=voice_request.participant_identity,
+        participant_name=voice_request.participant_name,
+        participant_metadata=voice_request.participant_metadata,
+        participant_attributes=voice_request.participant_attributes,
+        room_config=voice_request.room_config,
+    )
+    return {
+        KEY_MESSAGE: "Voice token generated successfully.",
+        "server_url": livekit_manager.url,
+        "participant_token": token
+    }
 
-@app.get("/sessions/running")
-def list_running_games_api():
-    running_games = databaseManager.get_running_games()
-    return [
-        {
-            KEY_HOSTNAME: domainManager.get_hostname(share_tag),
-            KEY_CONNECTED_CLIENTS: connected_clients,
-            KEY_LAST_HEARTBEAT: last_heartbeat,
-            KEY_DROPLET_ID: droplet_id,
-            KEY_SHARE_TAG: share_tag,
-        }
-        for ipv4, connected_clients, last_heartbeat, droplet_id, share_tag in running_games
-    ]
 
 
 # Server management endpoints (internal use only, protected by HMAC)
@@ -274,3 +302,4 @@ def server_heartbeat(heartbeat_data: ServerHeartbeatRequest, _: None = Depends(r
     return {
         KEY_MESSAGE: MSG_HEARTBEAT_UPDATED,
     }
+
