@@ -22,9 +22,18 @@ CREATE TABLE IF NOT EXISTS game_droplets (
     fresh_game INTEGER GENERATED ALWAYS AS (CASE WHEN connected_clients <= 0 THEN 1 ELSE 0 END) STORED,
     last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     droplet_id INT NOT NULL DEFAULT 0,
-    share_tag TEXT UNIQUE
+    share_tag TEXT UNIQUE,
+    is_joinable INTEGER NOT NULL DEFAULT 0 CHECK (is_joinable IN (0, 1))
 )
 """)
+
+cur.execute("PRAGMA table_info(game_droplets)")
+existing_columns = {row[1] for row in cur.fetchall()}
+if "is_joinable" not in existing_columns:
+    cur.execute("""
+    ALTER TABLE game_droplets
+    ADD COLUMN is_joinable INTEGER NOT NULL DEFAULT 0 CHECK (is_joinable IN (0, 1))
+    """)
 
 cur.execute("""
 CREATE TRIGGER IF NOT EXISTS set_share_tag_after_insert

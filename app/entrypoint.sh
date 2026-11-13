@@ -7,10 +7,8 @@ if [ -n "$DB_PATH" ]; then
         mkdir -p "$db_dir"
     fi
 
-    if [ ! -f "$DB_PATH" ]; then
-        echo "Database not found at $DB_PATH. Creating..."
-        python db/database_setup.py
-    fi
+    echo "Ensuring database schema at $DB_PATH..."
+    python db/database_setup.py
 else
     echo "DB_PATH is not set. Skipping database setup."
 fi

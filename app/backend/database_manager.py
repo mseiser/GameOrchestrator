@@ -72,16 +72,16 @@ class DBManager:
         return share_tag
         return share_tag
 
-    def update_heartbeat_by_share_tag(self, share_tag: str, connected_clients: int):
+    def update_heartbeat_by_share_tag(self, share_tag: str, connected_clients: int, is_joinable: bool):
         conn = sqlite3.connect(self.db)
         cur = conn.cursor()
         cur.execute(
             """
             UPDATE game_droplets
-            SET connected_clients = ?, last_heartbeat = CURRENT_TIMESTAMP
+            SET connected_clients = ?, is_joinable = ?, last_heartbeat = CURRENT_TIMESTAMP
             WHERE share_tag = ?
             """,
-            (connected_clients, share_tag),
+            (connected_clients, int(is_joinable), share_tag),
         )
         updated = cur.rowcount > 0
         conn.commit()
@@ -129,8 +129,9 @@ class DBManager:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT share_tag, connected_clients
+            SELECT share_tag, connected_clients, is_joinable
             FROM game_droplets
+            WHERE is_joinable = 1
             ORDER BY last_heartbeat DESC
             """,
         )
@@ -144,7 +145,7 @@ class DBManager:
         cur.execute(
             """
             SELECT ipv4, share_tag FROM game_droplets
-            WHERE fresh_game = 1
+            WHERE fresh_game = 1 AND is_joinable = 1
             ORDER BY last_heartbeat ASC
             """,
         )
@@ -209,6 +210,20 @@ class DBManager:
         result = cur.fetchone()
         conn.close()
         return result[0] if result else None
+
+    def get_ipv4_and_joinable_by_share_tag(self, share_tag: str):
+        conn = sqlite3.connect(self.db)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT ipv4, is_joinable FROM game_droplets
+            WHERE share_tag = ?
+            """,
+            (share_tag,),
+        )
+        result = cur.fetchone()
+        conn.close()
+        return result
 
     def get_share_tag_by_ipv4(self, ipv4: str):
         conn = sqlite3.connect(self.db)

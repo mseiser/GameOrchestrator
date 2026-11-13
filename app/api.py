@@ -3,7 +3,7 @@
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 from typing import Optional, Dict
 import logging
 import os
@@ -88,6 +88,7 @@ async def log_requests(request: Request, call_next):
 class ServerHeartbeatRequest(BaseModel):
     share_tag: str
     connected_clients: int = Field(default=0, ge=0)
+    is_joinable: bool = Field(validation_alias=AliasChoices("is_joinable", "IsJoinAble"))
 
 
 class ServerRegisterRequest(BaseModel):
@@ -150,9 +151,11 @@ async def start_game_session_api():
 @app.post("/sessions/join")
 def join_game_session_api(game_tag: str):
     game_tag = game_tag.lower()
-    result = databaseManager.get_ipv4_by_share_tag(game_tag)
+    result = databaseManager.get_ipv4_and_joinable_by_share_tag(game_tag)
     if not result:
         raise HTTPException(status_code=404, detail=ERROR_DROPLET_NOT_FOUND_DB)
+    if not result[1]:
+        raise HTTPException(status_code=409, detail="Game session is not joinable right now.")
     return {
         KEY_HOSTNAME: domainManager.get_hostname(game_tag)
     }
@@ -161,11 +164,12 @@ def join_game_session_api(game_tag: str):
 def list_running_games_api():
     running_games = databaseManager.get_running_games()
     array_of_running_games = []
-    for share_tag, connected_clients in running_games:
+    for share_tag, connected_clients, is_joinable in running_games:
         array_of_running_games.append({
             KEY_HOSTNAME: domainManager.get_hostname(share_tag),
             KEY_CONNECTED_CLIENTS: connected_clients,
             KEY_SHARE_TAG: share_tag,
+            KEY_IS_JOINABLE: bool(is_joinable),
         })
     return array_of_running_games
 
@@ -288,13 +292,20 @@ def end_game_session_api(droplet_ip: str, _: None = Depends(require_internal_hma
 @app.post("/server/heartbeat")
 def server_heartbeat(heartbeat_data: ServerHeartbeatRequest, _: None = Depends(require_internal_hmac)):
     share_tag = heartbeat_data.share_tag.lower()
-    logger.info(f"[API DEBUG] /server/heartbeat endpoint reached - share_tag: {share_tag}, connected_clients: {heartbeat_data.connected_clients}")
+    logger.info(
+        "[API DEBUG] /server/heartbeat endpoint reached - "
+        "share_tag: %s, connected_clients: %s, is_joinable: %s",
+        share_tag,
+        heartbeat_data.connected_clients,
+        heartbeat_data.is_joinable,
+    )
     if heartbeat_data.connected_clients < 0:
         raise HTTPException(status_code=422, detail="connected_clients cannot be negative.")
 
     success = databaseManager.update_heartbeat_by_share_tag(
         share_tag,
         heartbeat_data.connected_clients,
+        heartbeat_data.is_joinable,
     )
 
     if not success:
@@ -302,4 +313,3 @@ def server_heartbeat(heartbeat_data: ServerHeartbeatRequest, _: None = Depends(r
     return {
         KEY_MESSAGE: MSG_HEARTBEAT_UPDATED,
     }
-
